@@ -1,29 +1,15 @@
-# Qwen/Qwen3.5-2B with official vLLM OpenAI image (same idea as vLLM Docker docs).
-# https://docs.vllm.ai/en/latest/deployment/docker.html
+# Stack: optional in-container vLLM (GPU) + Next.js chat UI (shadcn) that proxies to OpenAI-compatible API.
 #
-# Requires: NVIDIA GPU + drivers, Docker with GPU (e.g. WSL2 + NVIDIA Container Toolkit on Windows).
+# Chat UI only (vLLM on host, e.g. conda):  docker compose up -d web
+# Full stack (GPU machine):               docker compose --profile with-vllm up -d
 #
-# Start:  docker compose up -d
-# Logs:  docker compose logs -f
-# Stop:  docker compose down
-#
-# Equivalent to:
-#   docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface \
-#     --env HF_TOKEN=$HF_TOKEN -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model Qwen/Qwen3.5-2B
-#
-# API: http://localhost:${VLLM_PORT:-8000}/v1/  — use model id "Qwen/Qwen3.5-2B" in requests.
-#
-# If port 8000 is busy, set VLLM_PORT in .env. If loading fails with qwen3_5 / Transformers errors,
-# pull a newer vllm/vllm-openai:latest or install a newer Transformers inside a small custom image.
-#
-# "Failed to resolve huggingface.co" in the container = DNS from Docker (common on Docker Desktop /
-# WSL2). The dns: list below uses public resolvers; override in .env via COMPOSE_FILE or edit if your
-# network blocks them. Behind HTTP(S) proxy, set HTTP_PROXY / HTTPS_PROXY / NO_PROXY on the service.
+# From the UI container, the host is reachable as host.docker.internal (Linux: extra_hosts below).
 
 services:
   vllm:
+    profiles: ["with-vllm"]
     image: vllm/vllm-openai:latest
-    container_name: vllm-qwen35-2b
+    container_name: vllm-openai
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -38,15 +24,33 @@ services:
     gpus: all
     command:
       - "--model"
-      - "Qwen/Qwen3.5-2B"
-      # Startup failed: free VRAM < gpu-memory-utilization × total (default 0.9). Tune via .env.
-      - "--gpu-memory-utilization"
-      - "${GPU_MEMORY_UTILIZATION:-0.82}"
-      # Smaller context = less KV cache; model allows much more, but 8 GB GPUs need a low cap.
+      - "${VLLM_MODEL:-Qwen/Qwen3.6-35B-A3B}"
+      - "--trust-remote-code"
+      - "--tensor-parallel-size"
+      - "${VLLM_TENSOR_PARALLEL_SIZE:-1}"
       - "--max-model-len"
-      - "${MAX_MODEL_LEN:-8192}"
-      # Text-only: drops vision encoder/profiling and saves VRAM (HF model card). Comment out if you need images/video.
-      - "--language-model-only"
+      - "${MAX_MODEL_LEN:-32768}"
+      - "--gpu-memory-utilization"
+      - "${GPU_MEMORY_UTILIZATION:-0.90}"
+      - "--enforce-eager"
+      - "--enable-dflash"
+      - "--use-ddtree"
+      - "--num-speculative-tokens"
+      - "${NUM_SPECULATIVE_TOKENS:-5}"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      # When both services run, use http://vllm:8000/v1. Override in .env if vLLM is on the host.
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      VLLM_API_KEY: ${VLLM_API_KEY:-sk-local-edge}
+      VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen3.6-35B-A3B}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   huggingface_cache:
