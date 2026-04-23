@@ -17,14 +17,22 @@ services:
       - "${VLLM_PORT:-8000}:8000"
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
     volumes:
       - huggingface_cache:/root/.cache/huggingface
     shm_size: "4gb"
     ipc: host
     gpus: all
+    # Flags aligned with the stock `vllm/vllm-openai` image (see vLLM Docker docs).
+    # The custom `examples/Dockerfile.vllm` image adds mods, FP8, tool-call-parser, etc.;
+    # enable those only if you build that image and point `image:` at it.
     command:
       - "--model"
       - "${VLLM_MODEL:-Qwen/Qwen3.6-35B-A3B}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
       - "--trust-remote-code"
       - "--tensor-parallel-size"
       - "${VLLM_TENSOR_PARALLEL_SIZE:-1}"
@@ -32,11 +40,8 @@ services:
       - "${MAX_MODEL_LEN:-32768}"
       - "--gpu-memory-utilization"
       - "${GPU_MEMORY_UTILIZATION:-0.90}"
-      - "--enforce-eager"
-      - "--enable-dflash"
-      - "--use-ddtree"
-      - "--num-speculative-tokens"
-      - "${NUM_SPECULATIVE_TOKENS:-5}"
+      - "--max-num-batched-tokens"
+      - "${MAX_NUM_BATCHED_TOKENS:-16384}"
 
   web:
     build:
