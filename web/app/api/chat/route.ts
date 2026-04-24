@@ -1,17 +1,8 @@
-import OpenAI from "openai";
+import type OpenAI from "openai";
+
+import { getDefaultModelId, getServerOpenAI } from "@/lib/server-openai";
 
 export const runtime = "nodejs";
-
-function getClient() {
-  const baseURL =
-    process.env.VLLM_BASE_URL?.replace(/\/$/, "") ??
-    "http://127.0.0.1:8000/v1";
-
-  return new OpenAI({
-    baseURL,
-    apiKey: process.env.VLLM_API_KEY ?? "sk-local-edge",
-  });
-}
 
 export async function POST(request: Request) {
   let body: {
@@ -31,11 +22,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "messages is required" }, { status: 400 });
   }
 
-  const model =
-    body.model ?? process.env.VLLM_MODEL ?? "Qwen/Qwen3.6-35B-A3B";
+  const model = body.model ?? getDefaultModelId();
   const maxTokens = body.maxTokens ?? 1024;
 
-  const client = getClient();
+  const client = getServerOpenAI();
 
   try {
     const stream = await client.chat.completions.create({

@@ -1,0 +1,28 @@
+FROM vllm-node
+
+# Apply mods from spark-vllm-docker
+COPY mods/fix-qwen3-coder-next/ /tmp/mod-coder-next/
+COPY mods/fix-qwen3.5-chat-template/ /tmp/mod-chat-template/
+
+RUN cd /tmp/mod-coder-next && bash run.sh
+RUN cd /tmp/mod-chat-template && WORKSPACE_DIR=/workspace bash run.sh
+
+ENV VLLM_MARLIN_USE_ATOMIC_ADD=1
+
+EXPOSE 8000
+
+CMD ["vllm", "serve", "Qwen/Qwen3.5-35B-A3B-FP8", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--max-model-len", "262144", \
+     "--max-num-batched-tokens", "16384", \
+     "--gpu-memory-utilization", "0.7", \
+     "--enable-auto-tool-choice", \
+     "--tool-call-parser", "qwen3_coder", \
+     "--kv-cache-dtype", "fp8", \
+     "--load-format", "fastsafetensors", \
+     "--attention-backend", "flashinfer", \
+     "--enable-prefix-caching", \
+     "--chat-template", "/workspace/unsloth.jinja", \
+     "-tp", "1", \
+     "--served-model-name", "model"]
